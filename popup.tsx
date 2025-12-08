@@ -42,13 +42,66 @@ function IndexPopup() {
     }
   }
 
-  const downloadFile = async (url: string, filename: string) => {
+  // 根据 MIME 类型获取文件扩展名
+  const getExtensionFromMime = (mimeType: string): string => {
+    const mimeMap: Record<string, string> = {
+      'video/mp4': 'mp4',
+      'video/webm': 'webm',
+      'video/quicktime': 'mov',
+      'video/x-msvideo': 'avi',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif'
+    }
+    return mimeMap[mimeType] || ''
+  }
+
+  // 确保文件名有正确的扩展名
+  const ensureExtension = (filename: string, mimeType: string, type: 'video' | 'thumbnail'): string => {
+    const ext = getExtensionFromMime(mimeType)
+    const defaultExt = type === 'video' ? 'mp4' : 'jpg'
+    const finalExt = ext || defaultExt
+    
+    // 检查文件名是否已有正确的扩展名
+    const hasExt = /\.(mp4|webm|mov|avi|jpg|jpeg|png|webp|gif)$/i.test(filename)
+    if (hasExt) {
+      return filename
+    }
+    
+    return `${filename}.${finalExt}`
+  }
+
+  const downloadFile = async (url: string, filename: string, type: 'video' | 'thumbnail' = 'video') => {
     setDownloading(prev => new Set(prev).add(url))
     
     try {
-      await chrome.downloads.download({ url, filename })
+      // 使用 fetch 获取文件内容，避免跨域下载问题
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const blob = await response.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      
+      // 根据实际内容类型确保文件名有正确的扩展名
+      const finalFilename = ensureExtension(filename, blob.type, type)
+      
+      // 使用 a 标签下载
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = finalFilename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      
+      // 清理 blob URL
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
     } catch (err) {
       console.error('Download failed:', err)
+      // 如果下载失败，尝试在新标签页打开
+      window.open(url, '_blank')
     } finally {
       setDownloading(prev => {
         const newSet = new Set(prev)
@@ -59,11 +112,14 @@ function IndexPopup() {
   }
 
   const downloadAll = async () => {
-    const allItems = [...extractedMedia.videos, ...extractedMedia.thumbnails]
-    
-    for (const item of allItems) {
-      await downloadFile(item.url, item.filename)
-      // Small delay between downloads
+    // 下载视频
+    for (const video of extractedMedia.videos) {
+      await downloadFile(video.url, video.filename, 'video')
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+    // 下载缩略图
+    for (const thumbnail of extractedMedia.thumbnails) {
+      await downloadFile(thumbnail.url, thumbnail.filename, 'thumbnail')
       await new Promise(resolve => setTimeout(resolve, 500))
     }
   }
@@ -287,7 +343,7 @@ function IndexPopup() {
                             Copy
                           </button>
                           <button
-                            onClick={() => downloadFile(video.url, video.filename)}
+                            onClick={() => downloadFile(video.url, video.filename, 'video')}
                             disabled={downloading.has(video.url)}
                             style={{
                               padding: '4px 8px',
@@ -365,7 +421,7 @@ function IndexPopup() {
                             Copy
                           </button>
                           <button
-                            onClick={() => downloadFile(thumbnail.url, thumbnail.filename)}
+                            onClick={() => downloadFile(thumbnail.url, thumbnail.filename, 'thumbnail')}
                             disabled={downloading.has(thumbnail.url)}
                             style={{
                               padding: '4px 8px',
