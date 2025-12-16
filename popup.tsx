@@ -76,32 +76,27 @@ function IndexPopup() {
     setDownloading(prev => new Set(prev).add(url))
     
     try {
-      // 使用 fetch 获取文件内容，避免跨域下载问题
-      const response = await fetch(url)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+      // 使用 Chrome downloads API 下载文件
+      // 首先获取文件类型以确保正确的扩展名
+      let finalFilename = filename
+      try {
+        const headResponse = await fetch(url, { method: 'HEAD' })
+        const contentType = headResponse.headers.get('content-type') || ''
+        finalFilename = ensureExtension(filename, contentType, type)
+      } catch {
+        // 如果 HEAD 请求失败，使用默认扩展名
+        finalFilename = ensureExtension(filename, '', type)
       }
       
-      const blob = await response.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      
-      // 根据实际内容类型确保文件名有正确的扩展名
-      const finalFilename = ensureExtension(filename, blob.type, type)
-      
-      // 使用 a 标签下载
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = finalFilename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      
-      // 清理 blob URL
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+      // 使用 chrome.downloads.download API
+      await chrome.downloads.download({
+        url: url,
+        filename: finalFilename,
+        saveAs: false
+      })
     } catch (err) {
       console.error('Download failed:', err)
-      // 如果下载失败，尝试在新标签页打开
-      window.open(url, '_blank')
+      setError(`Failed to download: ${err.message || 'Unknown error'}`)
     } finally {
       setDownloading(prev => {
         const newSet = new Set(prev)
