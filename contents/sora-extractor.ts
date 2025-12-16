@@ -16,12 +16,6 @@ interface ExtractedMedia {
   thumbnails: MediaItem[]
 }
 
-// 辅助函数：安全获取 meta 标签内容
-function getMetaContent(property: string): string | null {
-  const element = document.querySelector(`meta[property="${property}"]`)
-  return element ? element.getAttribute('content') : null
-}
-
 // 生成文件名
 function generateFilename(url: string, type: 'video' | 'thumbnail'): string {
   try {
@@ -36,13 +30,54 @@ function generateFilename(url: string, type: 'video' | 'thumbnail'): string {
   }
 }
 
-// 主提取函数：从 meta 标签提取视频和缩略图链接
+// 主提取函数：从 JSON-LD（VideoObject）中提取视频和缩略图链接
 function extractMediaFromPage(): ExtractedMedia {
   const videos: MediaItem[] = []
   const thumbnails: MediaItem[] = []
 
-  // 从 meta 标签提取视频链接
-  const videoUrl = getMetaContent('og:video')
+  // 1. 获取页面上所有 JSON-LD 脚本标签
+  const scripts = document.querySelectorAll('script[type="application/ld+json"]')
+
+  let targetData: any = null
+
+  // 2. 遍历查找包含 VideoObject 的脚本
+  for (const script of Array.from(scripts)) {
+    try {
+      const text = script.textContent || script.innerHTML || ""
+      if (!text.trim()) continue
+
+      const json = JSON.parse(text)
+
+      // 兼容数组或单对象结构
+      const candidates = Array.isArray(json) ? json : [json]
+      for (const item of candidates) {
+        if (item && item['@type'] === 'VideoObject') {
+          targetData = item
+          break
+        }
+      }
+
+      if (targetData) break
+    } catch {
+      // 忽略解析失败的脚本
+      continue
+    }
+  }
+
+  if (!targetData) {
+    throw new Error('未在页面中找到 VideoObject 数据')
+  }
+
+  // 3. 提取数据（兼容 thumbnailUrl 为数组或字符串）
+  const videoUrl: string | undefined = targetData.contentUrl
+
+  let thumbnailUrl: string | undefined
+  if (Array.isArray(targetData.thumbnailUrl)) {
+    thumbnailUrl = targetData.thumbnailUrl[0]
+  } else {
+    thumbnailUrl = targetData.thumbnailUrl
+  }
+
   if (videoUrl) {
     videos.push({
       url: videoUrl,
@@ -51,8 +86,6 @@ function extractMediaFromPage(): ExtractedMedia {
     })
   }
 
-  // 从 meta 标签提取缩略图链接
-  const thumbnailUrl = getMetaContent('og:image')
   if (thumbnailUrl) {
     thumbnails.push({
       url: thumbnailUrl,
@@ -61,10 +94,7 @@ function extractMediaFromPage(): ExtractedMedia {
     })
   }
 
-  return {
-    videos,
-    thumbnails
-  }
+  return { videos, thumbnails }
 }
 
 // Listen for messages from popup
