@@ -72,21 +72,35 @@ function IndexPopup() {
     return `${filename}.${finalExt}`
   }
 
+  // 清理文件名，移除不合法字符，避免 chrome.downloads 报 "Invalid filename"
+  const sanitizeFilename = (rawName: string, type: 'video' | 'thumbnail'): string => {
+    const fallbackBase = type === 'video' ? 'sora-video' : 'sora-thumbnail'
+    let name = rawName || ''
+
+    // 去掉路径信息（仅保留最后一段）
+    name = name.split(/[/\\]/).pop() || ''
+
+    // 移除常见非法字符  \ / : * ? " < > | 和控制字符
+    name = name.replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_')
+
+    // 去掉首尾空格和点，避免隐藏文件或无效名
+    name = name.trim().replace(/^\.+/, '').replace(/\.+$/, '')
+
+    if (!name) {
+      const ts = new Date().toISOString().replace(/[:.]/g, '-')
+      name = `${fallbackBase}-${ts}.${type === 'video' ? 'mp4' : 'jpg'}`
+    }
+
+    return name
+  }
+
   const downloadFile = async (url: string, filename: string, type: 'video' | 'thumbnail' = 'video') => {
     setDownloading(prev => new Set(prev).add(url))
     
     try {
-      // 使用 Chrome downloads API 下载文件
-      // 首先获取文件类型以确保正确的扩展名
-      let finalFilename = filename
-      try {
-        const headResponse = await fetch(url, { method: 'HEAD' })
-        const contentType = headResponse.headers.get('content-type') || ''
-        finalFilename = ensureExtension(filename, contentType, type)
-      } catch {
-        // 如果 HEAD 请求失败，使用默认扩展名
-        finalFilename = ensureExtension(filename, '', type)
-      }
+      // 基于原始文件名简单确保扩展名并做合法化处理
+      const withExt = ensureExtension(filename, '', type)
+      const finalFilename = sanitizeFilename(withExt, type)
       
       // 使用 chrome.downloads.download API
       await chrome.downloads.download({
