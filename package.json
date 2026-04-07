@@ -3,7 +3,7 @@
   "displayName": "Save sora video",
   "version": "0.1.1",
   "description": "Easily download Sora videos and thumbnails - One-click extraction and save for ChatGPT Sora generated video content",
-  "author": "milo <zh.milo@soravideodownloader.com>",
+  "author": "milo <contact@soravideodownloader.com>",
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build",
